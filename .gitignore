@@ -1,0 +1,12 @@
+.DS_Store
+*.swp
+*~
+nimcache/
+nimblecache/
+htmldocs/
+docs/
+vendor/
+report.html
+TODO.md
+CLAUDE.md
+.claude/
