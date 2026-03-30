@@ -8,5 +8,7 @@ skipDirs      = @["tests", "benchmarks", "docs"]
 
 # Dependencies
 requires "nim >= 2.2.0"
-requires "chronos >= 4.2.0"
-requires "websock#42c37b4"
+requires "chronos >= 4.0.0"
+
+feature "ws":
+  requires "websock >= 0.2.1"

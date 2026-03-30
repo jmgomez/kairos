@@ -32,7 +32,7 @@ proc toWsHttpTable(headers: HttpHeaders): HttpTable =
 
 proc upgradeToWebSocket*(
   req: Request,
-  protos: openArray[string] = [""],
+  protos: seq[string] = @[""],
   version: uint = WSDefaultVersion
 ): Future[WSSession] {.async.} =
   ## Upgrade a kairos Request to a WebSocket session.
