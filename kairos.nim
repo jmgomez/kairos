@@ -7,6 +7,7 @@
 import std/[net, options, strutils]
 import chronos
 import chronos/transports/[common, stream]
+import chronos/threadsync
 import httpcore
 export httpcore, options, chronos
 
@@ -306,8 +307,7 @@ proc acceptLoop(server: StreamServer) {.async.} =
         dec gActiveConns
     discard wrappedClient(gOnRequest, transp)
 
-proc eventLoop(args: (OnRequest, Settings)) {.thread.} =
-  let (onRequest, settings) = args
+proc setupServer(onRequest: OnRequest, settings: Settings) =
   gOnRequest = onRequest
   gSettings = settings
 
@@ -338,7 +338,45 @@ proc eventLoop(args: (OnRequest, Settings)) {.thread.} =
   if settings.startup != nil:
     settings.startup()
 
+proc eventLoop(args: (OnRequest, Settings, ThreadSignalPtr)) {.thread.} =
+  setupServer(args[0], args[1])
   waitFor acceptLoop(gServer)
+  if not args[2].isNil:
+    discard args[2].fireSync()
+
+proc runAsync*(onRequest: OnRequest, settings: Settings): Future[void] {.async.} =
+  let numThreads =
+    when compileOption("threads"):
+      if settings.numThreads == 0:
+        when defined(posix):
+          countProcessors()
+        else:
+          1
+      else:
+        settings.numThreads
+    else:
+      1
+
+  if numThreads > 1:
+    when compileOption("threads"):
+      var signals = newSeq[ThreadSignalPtr](numThreads)
+      var threads = newSeq[Thread[(OnRequest, Settings, ThreadSignalPtr)]](numThreads)
+      for i in 0 ..< numThreads:
+        signals[i] = ThreadSignalPtr.new().value
+        createThread(threads[i], eventLoop, (onRequest, settings, signals[i]))
+      for sig in signals:
+        await sig.wait()
+      for sig in signals:
+        discard sig.close()
+    else:
+      {.cast(raises: []).}: setupServer(onRequest, settings)
+      await acceptLoop(gServer)
+  else:
+    {.cast(raises: []).}: setupServer(onRequest, settings)
+    await acceptLoop(gServer)
+
+proc runAsync*(onRequest: OnRequest): Future[void] {.inline.} =
+  runAsync(onRequest, initSettings())
 
 proc run*(onRequest: OnRequest, settings: Settings) =
   let numThreads =
@@ -355,14 +393,14 @@ proc run*(onRequest: OnRequest, settings: Settings) =
 
   if numThreads > 1:
     when compileOption("threads"):
-      var threads = newSeq[Thread[(OnRequest, Settings)]](numThreads)
+      var threads = newSeq[Thread[(OnRequest, Settings, ThreadSignalPtr)]](numThreads)
       for i in 0 ..< numThreads:
-        createThread(threads[i], eventLoop, (onRequest, settings))
+        createThread(threads[i], eventLoop, (onRequest, settings, nil))
       joinThreads(threads)
     else:
-      eventLoop((onRequest, settings))
+      eventLoop((onRequest, settings, nil))
   else:
-    eventLoop((onRequest, settings))
+    eventLoop((onRequest, settings, nil))
 
 proc run*(onRequest: OnRequest) {.inline.} =
   run(onRequest, initSettings())
