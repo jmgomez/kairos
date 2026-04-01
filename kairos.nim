@@ -328,15 +328,6 @@ proc setupServer(onRequest: OnRequest, settings: Settings) =
     except TransportOsError as exc:
       raise newException(IOError, "Failed to create server: " & exc.msg)
 
-  when defined(posix):
-    proc handleSignal(udata: pointer) {.gcsafe, raises: [].} =
-      {.cast(raises: []).}:
-        gServer.stop()
-      gServer.close()
-
-    discard addSignal(SIGINT, handleSignal)
-    discard addSignal(SIGTERM, handleSignal)
-
   if settings.startup != nil:
     settings.startup()
 
