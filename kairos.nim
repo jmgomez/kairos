@@ -329,7 +329,9 @@ proc setupServer(onRequest: OnRequest, settings: Settings) =
       raise newException(IOError, "Failed to create server: " & exc.msg)
 
   when defined(posix):
-    proc handleSignal(udata: pointer) {.gcsafe.} =
+    proc handleSignal(udata: pointer) {.gcsafe, raises: [].} =
+      {.cast(raises: []).}:
+        gServer.stop()
       gServer.close()
 
     discard addSignal(SIGINT, handleSignal)
