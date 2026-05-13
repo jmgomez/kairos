@@ -1,6 +1,6 @@
 ## Server integration tests — uses raw posix exec to avoid asyncdispatch.
 
-import std/[options, net, os, strutils, tempfiles]
+import std/[options, net, os, strutils, tempfiles, unittest]
 import ../kairos
 
 proc curl(url: string, extraArgs = ""): string =
@@ -17,17 +17,11 @@ proc curlStatus(url: string, extraArgs = ""): int =
 proc onRequest(req: Request): Future[void] {.gcsafe.} =
   let p = req.path.get("/")
   case p
-  of "/":
-    req.send(Http200, "hello kairos")
-  of "/method":
-    req.send(Http200, $req.httpMethod.get())
-  of "/echo":
-    let b = req.body.get("")
-    req.send(Http200, b)
-  of "/ip":
-    req.send(Http200, req.ip)
-  else:
-    req.send(Http404, "not found")
+  of "/":       req.send(Http200, "hello kairos")
+  of "/method": req.send(Http200, $req.httpMethod.get())
+  of "/echo":   req.send(Http200, req.body.get(""))
+  of "/ip":     req.send(Http200, req.ip)
+  else:         req.send(Http404, "not found")
   var fut = newFuture[void]("handler")
   fut.complete()
   return fut
@@ -39,43 +33,31 @@ proc startServer() {.thread.} =
 createThread(serverThread, startServer)
 sleep(500)
 
-block testHello:
-  let resp = curl("http://127.0.0.1:18080/")
-  doAssert resp == "hello kairos", "Got: " & resp
-  echo "PASS: basic hello response"
+suite "Server integration":
+  test "basic hello response":
+    check curl("http://127.0.0.1:18080/") == "hello kairos"
 
-block testMethod:
-  let resp = curl("http://127.0.0.1:18080/method")
-  doAssert resp == "GET", "Got: " & resp
-  echo "PASS: method detection"
+  test "method detection":
+    check curl("http://127.0.0.1:18080/method") == "GET"
 
-block testPostBody:
-  let resp = curl("http://127.0.0.1:18080/echo", "-X POST -d 'test body data'")
-  doAssert resp == "test body data", "Got: " & resp
-  echo "PASS: POST body reading"
+  test "POST body reading":
+    check curl("http://127.0.0.1:18080/echo", "-X POST -d 'test body data'") ==
+      "test body data"
 
-block testIp:
-  let resp = curl("http://127.0.0.1:18080/ip")
-  doAssert resp.len > 0, "IP should not be empty"
-  doAssert "127.0.0.1" in resp, "Got: " & resp
-  echo "PASS: IP address"
+  test "IP address":
+    let resp = curl("http://127.0.0.1:18080/ip")
+    check resp.len > 0
+    check "127.0.0.1" in resp
 
-block test404:
-  let status = curlStatus("http://127.0.0.1:18080/nonexistent")
-  doAssert status == 404, "Got: " & $status
-  echo "PASS: 404 response"
+  test "404 response":
+    check curlStatus("http://127.0.0.1:18080/nonexistent") == 404
 
-block testChunked:
-  # curl -H "Transfer-Encoding: chunked" sends chunked automatically with -d
-  let resp = curl("http://127.0.0.1:18080/echo", "-H 'Transfer-Encoding: chunked' -d 'chunked body test'")
-  doAssert resp == "chunked body test", "Got: " & resp
-  echo "PASS: chunked transfer encoding"
+  test "chunked transfer encoding":
+    check curl(
+      "http://127.0.0.1:18080/echo",
+      "-H 'Transfer-Encoding: chunked' -d 'chunked body test'"
+    ) == "chunked body test"
 
-block testConcurrent:
-  for i in 0 ..< 10:
-    let resp = curl("http://127.0.0.1:18080/")
-    doAssert resp == "hello kairos"
-  echo "PASS: concurrent requests"
-
-echo "All server tests passed"
-quit(0)
+  test "10 sequential requests":
+    for _ in 0 ..< 10:
+      check curl("http://127.0.0.1:18080/") == "hello kairos"

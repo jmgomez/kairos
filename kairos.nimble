@@ -1,5 +1,5 @@
 # Package
-version       = "0.1.0"
+version       = "0.1.1"
 author        = "jmgomez"
 description   = "Multi-threaded chronos HTTP server with httpx-compatible API"
 license       = "MIT"
